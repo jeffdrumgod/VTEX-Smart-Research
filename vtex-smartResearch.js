@@ -62,7 +62,8 @@ jQuery.fn.vtexSmartResearch=function(opts)
 		// Recebe como parâmetro um objeto contendo a quantidade total de requisições feitas e a quantidade de filtros selecionados
 		authorizeUpdate:function(){return true;},
 		// Callback de cada laço percorrendo os fildsets e os labels. Retorna um objeto com algumas informações
-		labelCallback:function(data){}
+		labelCallback:function(data){},
+    infinitScroll: false,
 	};
 
     var options=jQuery.extend(defaults, opts),
@@ -86,6 +87,29 @@ jQuery.fn.vtexSmartResearch=function(opts)
 
 	var fn=
 	{
+    getPagerIdentifier:function() {
+      return (Object.keys(window).find(function(key) { return key.indexOf('PageClick_') === 0}) || '').split("_").pop()
+    },
+    replaceNativePagerFunction: function() {
+      var identifier = fn.getPagerIdentifier();
+      var nativeFunctionName = 'PageClick_' + identifier;
+      var fnResetPager = function(pageclickednumber) {
+        $('#PagerTop_' + identifier).pager({ pagenumber: pageclickednumber, pagecount: window['pagecount_' + identifier], buttonClickCallback: window[nativeFunctionName] });
+          $('#PagerBottom_' + identifier).pager({ pagenumber: pageclickednumber, pagecount: window['pagecount_' + identifier], buttonClickCallback: window[nativeFunctionName] });
+      };
+
+      try {
+        window[nativeFunctionName] = function(pageclickednumber) {
+          window.location.hash = pageclickednumber;
+          currentPage = +pageclickednumber;
+          fn.requestNextPage();
+          fnResetPager(pageclickednumber)
+        };
+        fnResetPager(1);
+      } catch (e) {
+        console.error(e);
+      }
+    },
 		getUrl:function(scroll)
 		{
 			var s=scroll||false;
@@ -136,58 +160,76 @@ jQuery.fn.vtexSmartResearch=function(opts)
 					elem.stop(true).fadeTo(300,0,function(){elem.hide();});
 			});
 			elem.bind("click",function(){
-				_html.animate({scrollTop:0},"slow");
+        window.scrollTo({
+          top: 0,
+          left: 0,
+          behavior: 'smooth'
+        });
 				return false;
 			});
 		},
 		infinitScroll:function()
 		{
-			var elementPages,pages,currentStatus,tmp;
+      if (!options.infinitScroll) {
+        return;
+      }
+      var _this=jQuery(document),
+        currentStatus=true;
 
-			elementPages=body.find(".pager:first").attr("id");
-			tmp=(elementPages||"").split("_").pop();
+			_window.bind('scroll',function() {
+        if(!animatingFilter && currentPage<=pages && moreResults && options.authorizeScroll(ajaxCallbackObj))
+        {
+          if((_this.scrollTop()+_this.height())>=(options.getShelfHeight(loadContentE)) && currentStatus)
+          {
+            currentStatus=false;
+            const xrh = fn.requestNextPage();
+            xrh.done(function() {
+              currentStatus=true;
+            })
+          }
+        }
+      });
+		},
+    requestNextPage: function(){
+      var pages,
+        tmp = fn.getPagerIdentifier();
+
 			pages=(null!==options.pageLimit)?options.pageLimit:window["pagecount_"+tmp];
-			currentStatus=true;
 
 			// Reportando erros
 			// if("undefined"===typeof pages) log("Não foi possível localizar quantidade de páginas.\n Tente adicionar o .js ao final da página. \n[Método: infinitScroll]");
 
-			if("undefined"===typeof pages)
-				pages=99999999;
+			if ("undefined"===typeof pages) {
+        pages=99999999;
+      }
+        var currentItems= options.infinitScroll ? loadContentE.find(options.shelfClass).filter(":last") : loadContentE;
+        currentItems[options.infinitScroll ? 'after' : 'append'](elemLoading);
+        
+        pageJqxhr=jQuery.ajax({
+          url: fn.getUrl(true),
+          success:function(data)
+          {
+            if(data.trim().length<1)
+            {
+              moreResults=false;
+              log("Não existem mais resultados a partir da página: "+(currentPage-1),"Aviso");
+            } else {
+              var $html = ($('<div />').html(data));
+              $html.find('meta').remove();
 
-			_window.bind('scroll',function(){
-				var _this=jQuery(this);
-				if(!animatingFilter && currentPage<=pages && moreResults && options.authorizeScroll(ajaxCallbackObj))
-				{
-					if((_this.scrollTop()+_this.height())>=(options.getShelfHeight(loadContentE)) && currentStatus)
-					{
-						var currentItems=loadContentE.find(options.shelfClass).filter(":last");
-						currentItems.after(elemLoading);
-						currentStatus=false;
-						pageJqxhr=jQuery.ajax({
-							url: fn.getUrl(true),
-							success:function(data)
-							{
-								if(data.trim().length<1)
-								{
-									moreResults=false;
-									log("Não existem mais resultados a partir da página: "+(currentPage-1),"Aviso");
-								}
-								else
-									currentItems.after(data);
-								currentStatus=true;
-								elemLoading.remove();
-								ajaxCallbackObj.requests++;
-								options.ajaxCallback(ajaxCallbackObj);
-							}
-						});
-						currentPage++;
-					}
-				}
-				else
-					return false;
-			});
-		}
+              currentItems[options.infinitScroll ? 'after' : 'html'](
+                $html.html()
+              );
+            }
+            elemLoading.remove();
+            ajaxCallbackObj.requests++;
+            options.ajaxCallback(ajaxCallbackObj);
+          }
+        });
+        currentPage++;
+
+        return pageJqxhr;
+    }
 	};
 
 	if(null!==options.searchUrl)
@@ -200,7 +242,7 @@ jQuery.fn.vtexSmartResearch=function(opts)
 	{
 		log("Nenhuma opção de filtro encontrada","Aviso");
 		if(options.showLinks) jQuery(options.linksMenu).css("visibility","visible").show();
-		fn.infinitScroll();
+    fn.infinitScroll();
 		fn.scrollToTop();
 		return $this;
 	}
@@ -209,8 +251,7 @@ jQuery.fn.vtexSmartResearch=function(opts)
 	if(loadContentE.length<1){log("Elemento para destino da requisição não foi encontrado \n ("+loadContentE.selector+")"); return false;}
 	if(filtersMenuE.length<1) log("O menu de filtros não foi encontrado \n ("+filtersMenuE.selector+")");
 
-	var currentUrl=document.location.href,
-		linksMenuE=jQuery(options.linksMenu),
+	var linksMenuE=jQuery(options.linksMenu),
 		prodOverlay=jQuery('<div class="vtexSr-overlay"></div>'),
 		departamentE=jQuery(options.menuDepartament),
 		loadContentOffset=loadContentE.offset(),
@@ -452,14 +493,15 @@ jQuery.fn.vtexSmartResearch=function(opts)
 		}
 	};
 
-	if(body.hasClass("departamento"))
+	if (window.vtxctx.categoryId === window.vtxctx.departmentyId) {
 		fns.mergeMenu();
-	else if(body.hasClass("categoria") || body.hasClass("resultado-busca"))
+  } else {
 		fns.mergeMenuList();
+  }
 
 	fns.exec();
-	fn.infinitScroll();
-	fn.scrollToTop();
+  fn.infinitScroll();
+	fn.replaceNativePagerFunction();
 	options.callback();
 
 	// Exibindo o menu

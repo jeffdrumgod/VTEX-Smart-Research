@@ -77,7 +77,8 @@ jQuery.fn.vtexSmartResearch = function (opts) {
     mergeMenu: true, // Define se o menu de links será mesclado com o de filtros será mesclado na página de departamento
     insertMenuAfter: '.search-multiple-navigator h3:first', // O menu de links será inserido após este elemento
     emptySearchElem: jQuery('<div class="vtexsr-emptySearch"></div>'), // Elemento Html (em Objeto jQuery) no qual será adicionado a mensagem de busca vazia
-    elemLoading: '<div id="scrollLoading">Carregando ... </div>', // Elemento com mensagem de carregando ao iniciar a requisição da página seguinte
+    elemLoading:
+      '<div id="scrollLoading" class="d-flex align-items-center justify-content-center"> <span class="spinner-border" role="status" aria-hidden="true"></span> </div>', // Elemento com mensagem de carregando ao iniciar a requisição da página seguinte
     returnTopText: '<span class="text">voltar ao</span><span class="text2">TOPO</span>', // Mensagem de "retornar ao topo"
     emptySearchMsg: '<h3>Esta combinação de filtros não retornou nenhum resultado!</h3>', // Html com a mensagem para ser apresentada quando não existirem resultados para os filtros selecionados
     filterErrorMsg: 'Houve um erro ao tentar filtrar a página!', // Mensagem de erro exibida quando existe algum erro de servidor ao aplicar os filtros
@@ -115,7 +116,7 @@ jQuery.fn.vtexSmartResearch = function (opts) {
     // Callback de cada laço percorrendo os fildsets e os labels. Retorna um objeto com algumas informações
     labelCallback: function (data) {},
     infinitScroll: false,
-    useHistoryApi: true,
+    useHistoryApi: false,
     changeUrl: false,
   };
 
@@ -170,10 +171,8 @@ jQuery.fn.vtexSmartResearch = function (opts) {
 
       try {
         window[nativeFunctionName] = function (pageclickednumber) {
-          window.location.hash = pageclickednumber;
-          if (options.changeUrl) {
-            currentPage = +pageclickednumber;
-          }
+          // window.location.hash = pageclickednumber;
+          currentPage = +pageclickednumber;
           fn.requestPage();
           fnResetPager(pageclickednumber);
         };
@@ -337,7 +336,7 @@ jQuery.fn.vtexSmartResearch = function (opts) {
                 title = regTitle.groups.title;
               }
 
-              window['pagecount_' + tmp] = reg.groups.pages;
+              window['pagecount_' + tmp] = reg?.groups?.pages;
               $(window).trigger('vtexSmartResearch.resetPager', { currentPage: currentPage });
               $('.resultado-busca-numero .value:eq(0)').html($html.find('.resultado-busca-numero .value').html());
 
@@ -369,12 +368,13 @@ jQuery.fn.vtexSmartResearch = function (opts) {
                 );
               }
             }
-
+            $html.find('.helperComplement').remove();
             currentItems[options.infinitScroll ? 'after' : 'html']($html.find('[id^="ResultItems_"]').html());
           }
-          elemLoading.remove();
           ajaxCallbackObj.requests++;
           options.ajaxCallback(ajaxCallbackObj);
+          elemLoading.remove();
+          jQuery.event.trigger('ajaxStop');
         });
 
       return promiseFetch;
@@ -656,11 +656,9 @@ jQuery.fn.vtexSmartResearch = function (opts) {
   if (!options.infinitScroll && options.useHistoryApi) {
     window.onpopstate = function (event) {
       try {
-        console.log('🚀 ~ file: vtex-smartResearch.js ~ line 639 ~ state ', event.state);
         if (event.state && event.state.filters) {
           $this.prop('checked', false);
           event.state.filters.map(function (rel) {
-            console.log('🚀 ~ file: vtex-smartResearch.js ~ line 643 ~ rel', rel);
             $this.filter('[rel="' + rel + '"]').prop('checked', true);
           });
         }

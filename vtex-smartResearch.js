@@ -80,7 +80,7 @@ jQuery.fn.vtexSmartResearch = function (opts) {
     elemLoading:
       '<div id="scrollLoading" class="d-flex align-items-center justify-content-center"> <span class="spinner-border" role="status" aria-hidden="true"></span> </div>', // Elemento com mensagem de carregando ao iniciar a requisição da página seguinte
     returnTopText: '<span class="text">voltar ao</span><span class="text2">TOPO</span>', // Mensagem de "retornar ao topo"
-    emptySearchMsg: '<h3>Esta combinação de filtros não retornou nenhum resultado!</h3>', // Html com a mensagem para ser apresentada quando não existirem resultados para os filtros selecionados
+    emptySearchMsg: '<p class="p-5 text-center">Esta combinação de filtros não retornou nenhum resultado!</p>', // Html com a mensagem para ser apresentada quando não existirem resultados para os filtros selecionados
     filterErrorMsg: 'Houve um erro ao tentar filtrar a página!', // Mensagem de erro exibida quando existe algum erro de servidor ao aplicar os filtros
     searchUrl: null, // Url da página de busca (opicional)
     usePopup: false, // Opção p/ definir se deseja que a mensagem de não localizado seja exibida em um popup
@@ -167,11 +167,15 @@ jQuery.fn.vtexSmartResearch = function (opts) {
           pagecount: window['pagecount_' + identifier],
           buttonClickCallback: window[nativeFunctionName],
         });
+        if (pageclickednumber != 1) {
+          window.location.hash = pageclickednumber;
+        } else {
+          window.location.hash = '';
+        }
       };
 
       try {
         window[nativeFunctionName] = function (pageclickednumber) {
-          // window.location.hash = pageclickednumber;
           currentPage = +pageclickednumber;
           fn.requestPage();
           fnResetPager(pageclickednumber);
@@ -314,15 +318,26 @@ jQuery.fn.vtexSmartResearch = function (opts) {
       controller = new AbortController();
       signal = controller.signal;
 
-      var promiseFetch = fetch(fetchUrl, { signal: signal });
+      var promiseFetch = fetch(fetchUrl, { signal: signal, redirect: 'manual' });
       promiseFetch
         .then(function (response) {
           return response.text();
         })
         .then(function (data) {
-          if (data && data.trim().length < 1) {
+          if (!data || data.trim().length < 1) {
             moreResults = false;
             log('Não existem mais resultados a partir da página: ' + currentPage, 'Aviso');
+
+            window['pagecount_' + tmp] = 0;
+            $(window).trigger('vtexSmartResearch.resetPager', { currentPage: currentPage });
+            $('.resultado-busca-numero .value:eq(0)').html(0);
+
+            currentItems[options.infinitScroll ? 'after' : 'html'](options.emptySearchMsg);
+
+            ajaxCallbackObj.requests++;
+            options.ajaxCallback(ajaxCallbackObj);
+            elemLoading.remove();
+            jQuery.event.trigger('ajaxStop');
           } else {
             var reg = data.match('pagecount_(.*) = (?<pages>.*);');
             var html = data.replace(/<.*?script.*?>.*?<\/.*?script.*?>/gim, '');
@@ -371,6 +386,21 @@ jQuery.fn.vtexSmartResearch = function (opts) {
             $html.find('.helperComplement').remove();
             currentItems[options.infinitScroll ? 'after' : 'html']($html.find('[id^="ResultItems_"]').html());
           }
+          ajaxCallbackObj.requests++;
+          options.ajaxCallback(ajaxCallbackObj);
+          elemLoading.remove();
+          jQuery.event.trigger('ajaxStop');
+        })
+        .catch(function (error) {
+          moreResults = false;
+          log('Não existem mais resultados a partir da página: ' + currentPage, 'Aviso');
+
+          window['pagecount_' + tmp] = 0;
+          $(window).trigger('vtexSmartResearch.resetPager', { currentPage: currentPage });
+          $('.resultado-busca-numero .value:eq(0)').html(0);
+
+          currentItems[options.infinitScroll ? 'after' : 'html'](options.emptySearchMsg);
+
           ajaxCallbackObj.requests++;
           options.ajaxCallback(ajaxCallbackObj);
           elemLoading.remove();
@@ -449,7 +479,7 @@ jQuery.fn.vtexSmartResearch = function (opts) {
         });
       });
 
-      if ('' !== urlFilters) fns.addFilter($empty);
+      // if ('' !== urlFilters) fns.addFilter($empty);
     },
     mergeMenu: function () {
       if (!options.mergeMenu) return false;
